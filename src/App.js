@@ -17,7 +17,7 @@ function App() {
   }, []);
 
   const fetchData = async () => {
-    const { data: comps } = await supabase.from('competitions').select('*').order('date', { ascending: true });
+    const { data: comps } = await supabase.from('competitions').select('*').order('date', { ascending: false });
     setCompetitions(comps || []);
 
     const { data: parts } = await supabase.from('participations').select('*').eq('user_id', MY_USER_ID);
@@ -208,7 +208,7 @@ function App() {
                 
                 {!isParticipating ? (
                   <button onClick={() => handleParticipate(comp.id, '참가')} style={{ padding: '10px 20px', backgroundColor: '#007BFF', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', width: '100%', fontSize: '16px', fontWeight: 'bold' }}>
-                    참가 신청하기
+                    기록 등록하기
                   </button>
                 ) : (
                   <div style={{ padding: '15px', backgroundColor: '#f0f8ff', borderRadius: '8px', border: '1px solid #cce5ff' }}>
