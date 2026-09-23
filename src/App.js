@@ -6,9 +6,8 @@ function App() {
   const [participations, setParticipations] = useState({});
   const [newComp, setNewComp] = useState({ title: '', date: '', location: '', course: '', category: '철인3종' });
   
-  // 새로 추가된 상태(State) 변수들
-  const [selectedYear, setSelectedYear] = useState('전체'); // 년도 필터용
-  const [editingComp, setEditingComp] = useState(null); // 수정 모드 추적용
+  const [selectedYear, setSelectedYear] = useState('전체'); 
+  const [editingComp, setEditingComp] = useState(null); 
   
   const MY_USER_ID = 'user_123'; 
 
@@ -17,6 +16,7 @@ function App() {
   }, []);
 
   const fetchData = async () => {
+    // 날짜순 내림차순(최신순) 정렬 적용
     const { data: comps } = await supabase.from('competitions').select('*').order('date', { ascending: false });
     setCompetitions(comps || []);
 
@@ -26,7 +26,6 @@ function App() {
     setParticipations(partsMap);
   };
 
-  // 1. [관리자] 대회 등록 기능
   const handleAddCompetition = async (e) => {
     e.preventDefault();
     const { error } = await supabase.from('competitions').insert([newComp]);
@@ -38,14 +37,11 @@ function App() {
     }
   };
 
-  // 2. [관리자] 대회 삭제 기능
   const handleDelete = async (compId) => {
     if (!window.confirm('정말로 이 대회를 삭제하시겠습니까?\n(등록된 참가 기록과 후기도 모두 삭제됩니다)')) return;
 
-    // 참가 기록을 먼저 지워야 참조 에러(FK)가 나지 않음
     await supabase.from('participations').delete().eq('comp_id', compId);
     
-    // 대회 삭제
     const { error } = await supabase.from('competitions').delete().eq('id', compId);
     if (error) alert('삭제 중 오류가 발생했습니다.');
     else {
@@ -54,7 +50,6 @@ function App() {
     }
   };
 
-  // 3. [관리자] 대회 수정 저장 기능
   const handleEditSubmit = async (e, compId) => {
     e.preventDefault();
     const { error } = await supabase.from('competitions').update({
@@ -68,12 +63,11 @@ function App() {
     if (error) alert('수정 실패!');
     else {
       alert('대회 정보가 수정되었습니다.');
-      setEditingComp(null); // 수정 모드 종료
+      setEditingComp(null); 
       fetchData();
     }
   };
 
-  // 4. 일반 참가 기능 및 사진 업로드
   const handleParticipate = async (compId, status) => {
     await supabase.from('participations').upsert({ user_id: MY_USER_ID, comp_id: compId, status }, { onConflict: 'user_id, comp_id' });
     fetchData();
@@ -107,10 +101,8 @@ function App() {
     fetchData();
   };
 
-  // 존재하는 년도만 뽑아서 배열로 만들기 (ex: ['전체', '2026', '2025'])
   const availableYears = ['전체', ...new Set(competitions.map(comp => comp.date.substring(0, 4)))].sort((a, b) => b - a);
   
-  // 선택된 년도에 맞게 리스트 필터링
   const filteredCompetitions = selectedYear === '전체' 
     ? competitions 
     : competitions.filter(comp => comp.date.startsWith(selectedYear));
@@ -119,7 +111,6 @@ function App() {
     <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', fontFamily: 'sans-serif' }}>
       <h2 style={{ textAlign: 'center' }}>🏊🚴🏃 Tri-Planner 스케줄러</h2>
       
-      {/* --- 상단: 관리자 수동 등록 폼 --- */}
       <form onSubmit={handleAddCompetition} style={{ marginBottom: '30px', padding: '15px', background: '#f5f5f5', borderRadius: '8px' }}>
         <h4 style={{ margin: '0 0 10px 0' }}>[관리자] 대회 수동 등록</h4>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -140,7 +131,6 @@ function App() {
         </div>
       </form>
 
-      {/* --- 중단: 년도별 필터 드롭다운 --- */}
       <div style={{ marginBottom: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3 style={{ margin: 0 }}>🏆 대회 일정</h3>
         <select 
@@ -158,16 +148,14 @@ function App() {
           <p style={{ textAlign: 'center', color: '#888', padding: '20px 0' }}>해당 조건에 등록된 대회가 없습니다.</p>
       )}
 
-      {/* --- 하단: 대회 목록 렌더링 --- */}
       {filteredCompetitions.map(comp => {
         const myRecord = participations[comp.id];
         const isParticipating = myRecord?.status === '참가';
-        const isEditing = editingComp?.id === comp.id; // 현재 이 항목이 수정 모드인지 확인
+        const isEditing = editingComp?.id === comp.id; 
 
         return (
           <div key={comp.id} style={{ border: '1px solid #ddd', margin: '15px 0', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)', position: 'relative' }}>
             
-            {/* 수정 모드일 때 보여줄 UI */}
             {isEditing ? (
               <form onSubmit={(e) => handleEditSubmit(e, comp.id)} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <h4 style={{ margin: '0 0 10px 0', color: '#007BFF' }}>대회 정보 수정</h4>
@@ -190,9 +178,7 @@ function App() {
                 </div>
               </form>
             ) : (
-              /* 일반 모드일 때 보여줄 UI */
               <>
-                {/* 관리자용 수정/삭제 버튼 (우측 상단) */}
                 <div style={{ position: 'absolute', top: '15px', right: '15px', display: 'flex', gap: '5px' }}>
                   <button onClick={() => setEditingComp(comp)} style={{ padding: '4px 8px', fontSize: '12px', cursor: 'pointer', border: '1px solid #ccc', background: '#fff', borderRadius: '4px' }}>수정</button>
                   <button onClick={() => handleDelete(comp.id)} style={{ padding: '4px 8px', fontSize: '12px', cursor: 'pointer', border: '1px solid #ff4d4f', color: '#ff4d4f', background: '#fff', borderRadius: '4px' }}>삭제</button>
@@ -207,21 +193,24 @@ function App() {
                 <p style={{ margin: '0 0 15px 0', color: '#555', marginTop: '10px' }}>📅 {comp.date} | 📍 {comp.location}</p>
                 
                 {!isParticipating ? (
+                  // 참가 버튼 -> 기록등록하기 명칭 변경
                   <button onClick={() => handleParticipate(comp.id, '참가')} style={{ padding: '10px 20px', backgroundColor: '#007BFF', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', width: '100%', fontSize: '16px', fontWeight: 'bold' }}>
-                    기록 등록하기
+                    기록등록하기
                   </button>
                 ) : (
                   <div style={{ padding: '15px', backgroundColor: '#f0f8ff', borderRadius: '8px', border: '1px solid #cce5ff' }}>
-                    <strong style={{ color: '#004085' }}>✅ 참가 신청 완료</strong>
+                    <strong style={{ color: '#004085' }}>✅ 기록 등록 활성화 됨</strong>
                     <br/><br/>
                     
+                    {/* 소감 영역 상단 배치 */}
+                    {myRecord.review && <p style={{ margin: '0 0 15px 0', fontSize: '16px', lineHeight: '1.5' }}>💬 <b>나의 소감:</b><br/> {myRecord.review}</p>}
+                    
+                    {/* 이미지 영역 하단 배치, 최대 높이 지정 및 비율 유지 */}
                     {myRecord.photo_url && (
-                        <div style={{ marginBottom: '15px' }}>
-                            <img src={myRecord.photo_url} alt="인증사진" style={{ maxWidth: '100%', height: 'auto', borderRadius: '8px', display: 'block' }} />
+                        <div style={{ marginBottom: '15px', textAlign: 'center' }}>
+                            <img src={myRecord.photo_url} alt="인증사진" style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'contain', borderRadius: '8px', display: 'inline-block' }} />
                         </div>
                     )}
-                    
-                    {myRecord.review && <p style={{ margin: '0 0 15px 0', fontSize: '16px', lineHeight: '1.5' }}>💬 <b>나의 소감:</b><br/> {myRecord.review}</p>}
                     
                     <label style={{ cursor: 'pointer', background: '#28a745', color: '#fff', padding: '10px 15px', borderRadius: '6px', display: 'block', textAlign: 'center', fontWeight: 'bold' }}>
                         📷 사진 및 소감 남기기
