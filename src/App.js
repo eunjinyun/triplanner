@@ -28,8 +28,13 @@ function App() {
 
     const fetchData = async () => {
       // 대회 목록 불러오기 (전체 혹은 내가 등록한 것만 보려면 .eq('user_id', currentUser.phone) 추가 가능)
-      const { data: comps } = await supabase.from('competitions').select('*').order('date', { ascending: false });
+    // const { data: comps } = await supabase.from('competitions').select('*').order('date', { ascending: false });
+     // setCompetitions(comps || []);
+
+      // 대회 목록 불러오기 (로그인한 유저의 대회만 필터링)
+      const { data: comps } = await supabase.from('competitions').select('*').eq('user_id', currentUser.phone).order('date', { ascending: false });
       setCompetitions(comps || []);
+
 
       // 로그인한 유저의 참가/기록 데이터만 정확히 가져오기
       const { data: parts } = await supabase.from('participations').select('*').eq('user_id', currentUser.phone);
