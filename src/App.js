@@ -2,28 +2,97 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
 
 function App() {
+  // 로그인 상태 관리 ('', 'login', 'signup')
+  const [authMode, setAuthMode] = useState(''); 
+  const [currentUser, setCurrentUser] = useState(null); // 로그인한 유저 정보 (phone, name 등)
+  
+  // 로그인/회원가입 입력 폼 상태
+  const [phoneInput, setPhoneInput] = useState('');
+  const [pwInput, setPwInput] = useState('');
+  const [nameInput, setNameInput] = useState('');
+
+  // 기존 서비스 데이터 상태
   const [competitions, setCompetitions] = useState([]);
   const [participations, setParticipations] = useState({});
   const [newComp, setNewComp] = useState({ title: '', date: '', location: '', course: '', category: '철인3종' });
-  
   const [selectedYear, setSelectedYear] = useState('전체'); 
   const [editingComp, setEditingComp] = useState(null); 
-  
-  const MY_USER_ID = 'user_123'; 
+  const [enlargedImage, setEnlargedImage] = useState(null);
 
+  // 브라우저에 로그인 정보가 남아있는지 확인
   useEffect(() => {
-    fetchData();
+    const savedUser = localStorage.getItem('tri_user');
+    if (savedUser) {
+      setCurrentUser(JSON.parse(savedUser));
+    }
   }, []);
 
+  // 로그인 상태가 바뀌거나 데이터가 바뀔 때 대회 및 참가 기록 불러오기
+  useEffect(() => {
+    if (currentUser) {
+      fetchData();
+    }
+  }, [currentUser]);
+
   const fetchData = async () => {
-    // 날짜순 내림차순(최신순) 정렬 적용
     const { data: comps } = await supabase.from('competitions').select('*').order('date', { ascending: false });
     setCompetitions(comps || []);
 
-    const { data: parts } = await supabase.from('participations').select('*').eq('user_id', MY_USER_ID);
+    // 로그인한 유저의 참가 기록만 가져옴 (user_id를 전화번호로 사용)
+    const { data: parts } = await supabase.from('participations').select('*').eq('user_id', currentUser.phone);
     const partsMap = {};
     parts?.forEach(p => partsMap[p.comp_id] = p);
     setParticipations(partsMap);
+  };
+
+  // 회원가입 처리
+  const handleSignUp = async (e) => {
+    e.preventDefault();
+    if (!phoneInput || !pwInput || !nameInput) {
+      return alert('모든 항목을 입력해주세요.');
+    }
+
+    // 1. 이미 가입된 번호가 있는지 확인
+    const { data: existing } = await supabase.from('users').select('*').eq('phone', phoneInput);
+    if (existing && existing.length > 0) {
+      return alert('이미 가입된 전화번호입니다. 로그인해 주세요.');
+    }
+
+    // 2. 유저 정보 저장
+    const { error } = await supabase.from('users').insert([{ phone: phoneInput, password: pwInput, name: nameInput }]);
+    if (error) {
+      alert('회원가입 실패! (Supabase에 users 테이블이 있는지 확인하세요)');
+    } else {
+      alert('회원가입이 완료되었습니다! 로그인해 주세요.');
+      setAuthMode('login');
+      setPwInput('');
+    }
+  };
+
+  // 로그인 처리
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    const { data, error } = await supabase.from('users').select('*').eq('phone', phoneInput).eq('password', pwInput);
+    
+    if (error || !data || data.length === 0) {
+      alert('전화번호나 비밀번호가 일치하지 않습니다.');
+    } else {
+      const userData = data[0];
+      setCurrentUser(userData);
+      localStorage.setItem('tri_user', JSON.stringify(userData)); // 브라우저에 기억
+      setAuthMode('');
+      setPhoneInput('');
+      setPwInput('');
+      alert(`${userData.name}님 환영합니다!`);
+    }
+  };
+
+  // 로그아웃
+  const handleLogout = () => {
+    localStorage.removeItem('tri_user');
+    setCurrentUser(null);
+    setParticipations({});
+    alert('로그아웃 되었습니다.');
   };
 
   const handleAddCompetition = async (e) => {
@@ -41,7 +110,6 @@ function App() {
     if (!window.confirm('정말로 이 대회를 삭제하시겠습니까?\n(등록된 참가 기록과 후기도 모두 삭제됩니다)')) return;
 
     await supabase.from('participations').delete().eq('comp_id', compId);
-    
     const { error } = await supabase.from('competitions').delete().eq('id', compId);
     if (error) alert('삭제 중 오류가 발생했습니다.');
     else {
@@ -69,7 +137,11 @@ function App() {
   };
 
   const handleParticipate = async (compId, status) => {
-    await supabase.from('participations').upsert({ user_id: MY_USER_ID, comp_id: compId, status }, { onConflict: 'user_id, comp_id' });
+    await supabase.from('participations').upsert({ 
+      user_id: currentUser.phone, 
+      comp_id: compId, 
+      status 
+    }, { onConflict: 'user_id, comp_id' });
     fetchData();
   };
 
@@ -79,7 +151,7 @@ function App() {
 
     alert('사진을 업로드 중입니다. 잠시만 기다려주세요...');
     const fileExt = file.name.split('.').pop();
-    const fileName = `${MY_USER_ID}_${compId}_${Date.now()}.${fileExt}`;
+    const fileName = `${currentUser.phone}_${compId}_${Date.now()}.${fileExt}`;
     
     const { error: uploadError } = await supabase.storage.from('photos').upload(fileName, file);
     if (uploadError) return alert('업로드 실패!');
@@ -90,7 +162,7 @@ function App() {
     const reviewText = prompt("대회후기 소감을 간략하게 남겨주세요 \n※ 사진만 등록하려면 빈칸으로 두세요");
     
     await supabase.from('participations').upsert({
-      user_id: MY_USER_ID,
+      user_id: currentUser.phone,
       comp_id: compId,
       status: '참가',
       review: reviewText || null,
@@ -102,13 +174,59 @@ function App() {
   };
 
   const availableYears = ['전체', ...new Set(competitions.map(comp => comp.date.substring(0, 4)))].sort((a, b) => b - a);
-  
   const filteredCompetitions = selectedYear === '전체' 
     ? competitions 
     : competitions.filter(comp => comp.date.startsWith(selectedYear));
 
+  // --- [A] 로그인이 안 되어 있는 경우 (로그인/회원가입 화면) ---
+  if (!currentUser) {
+    return (
+      <div style={{ padding: '30px', maxWidth: '400px', margin: '50px auto', fontFamily: 'sans-serif', border: '1px solid #ddd', borderRadius: '12px', boxShadow: '0 4px 10px rgba(0,0,0,0.05)' }}>
+        <h2 style={{ textAlign: 'center', marginBottom: '20px' }}>🏊🚴🏃 Tri-Planner</h2>
+        
+        {authMode === '' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <p style={{ textAlign: 'center', color: '#666' }}>서비스를 이용하려면 로그인이 필요합니다.</p>
+            <button onClick={() => setAuthMode('login')} style={{ padding: '12px', backgroundColor: '#007BFF', color: 'white', border: 'none', borderRadius: '6px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer' }}>로그인하기</button>
+            <button onClick={() => setAuthMode('signup')} style={{ padding: '12px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '6px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer' }}>회원가입하기</button>
+          </div>
+        )}
+
+        {/* 로그인 폼 */}
+        {authMode === 'login' && (
+          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <h3>로그인</h3>
+            <input placeholder="전화번호 (예: 01012345678)" value={phoneInput} onChange={e => setPhoneInput(e.target.value)} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}/>
+            <input type="password" placeholder="비밀번호" value={pwInput} onChange={e => setPwInput(e.target.value)} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}/>
+            <button type="submit" style={{ padding: '12px', backgroundColor: '#007BFF', color: 'white', border: 'none', borderRadius: '6px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer' }}>로그인</button>
+            <button type="button" onClick={() => setAuthMode('')} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', marginTop: '10px' }}>← 처음으로</button>
+          </form>
+        )}
+
+        {/* 회원가입 폼 */}
+        {authMode === 'signup' && (
+          <form onSubmit={handleSignUp} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <h3>회원가입</h3>
+            <input placeholder="이름 (닉네임)" value={nameInput} onChange={e => setNameInput(e.target.value)} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}/>
+            <input placeholder="전화번호 (예: 01012345678)" value={phoneInput} onChange={e => setPhoneInput(e.target.value)} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}/>
+            <input type="password" placeholder="비밀번호" value={pwInput} onChange={e => setPwInput(e.target.value)} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}/>
+            <button type="submit" style={{ padding: '12px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '6px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer' }}>가입완료</button>
+            <button type="button" onClick={() => setAuthMode('')} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', marginTop: '10px' }}>← 처음으로</button>
+          </form>
+        )}
+      </div>
+    );
+  }
+
+  // --- [B] 로그인이 완료된 경우 (메인 스케줄러 화면) ---
   return (
     <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', fontFamily: 'sans-serif' }}>
+      {/* 상단 유저 정보 및 로그아웃 바 */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8f9fa', padding: '10px 15px', borderRadius: '8px', marginBottom: '20px' }}>
+        <span>👤 <b>{currentUser.name}</b>님 환영합니다!</span>
+        <button onClick={handleLogout} style={{ padding: '6px 12px', backgroundColor: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' }}>로그아웃</button>
+      </div>
+
       <h2 style={{ textAlign: 'center' }}>🏊🚴🏃 Tri-Planner 스케줄러</h2>
       
       <form onSubmit={handleAddCompetition} style={{ marginBottom: '30px', padding: '15px', background: '#f5f5f5', borderRadius: '8px' }}>
@@ -193,7 +311,6 @@ function App() {
                 <p style={{ margin: '0 0 15px 0', color: '#555', marginTop: '10px' }}>📅 {comp.date} | 📍 {comp.location}</p>
                 
                 {!isParticipating ? (
-                  // 참가 버튼 -> 기록등록하기 명칭 변경
                   <button onClick={() => handleParticipate(comp.id, '참가')} style={{ padding: '10px 20px', backgroundColor: '#007BFF', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', width: '100%', fontSize: '16px', fontWeight: 'bold' }}>
                     기록등록하기
                   </button>
@@ -202,13 +319,26 @@ function App() {
                     <strong style={{ color: '#004085' }}>✅ 기록 등록 활성화 됨</strong>
                     <br/><br/>
                     
-                    {/* 소감 영역 상단 배치 */}
                     {myRecord.review && <p style={{ margin: '0 0 15px 0', fontSize: '16px', lineHeight: '1.5' }}>💬 <b>나의 소감:</b><br/> {myRecord.review}</p>}
                     
-                    {/* 이미지 영역 하단 배치, 최대 높이 지정 및 비율 유지 */}
                     {myRecord.photo_url && (
                         <div style={{ marginBottom: '15px', textAlign: 'center' }}>
-                            <img src={myRecord.photo_url} alt="인증사진" style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'contain', borderRadius: '8px', display: 'inline-block' }} />
+                            <img 
+                              src={myRecord.photo_url} 
+                              alt="인증사진" 
+                              onClick={() => setEnlargedImage(myRecord.photo_url)}
+                              onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+                              onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                              style={{ 
+                                maxWidth: '100%', 
+                                maxHeight: '200px', 
+                                objectFit: 'contain', 
+                                borderRadius: '8px', 
+                                display: 'inline-block',
+                                cursor: 'zoom-in',
+                                transition: 'transform 0.2s ease-in-out'
+                              }} 
+                            />
                         </div>
                     )}
                     
@@ -223,6 +353,29 @@ function App() {
           </div>
         );
       })}
+
+      {/* 사진 확대 모달 */}
+      {enlargedImage && (
+        <div 
+          onClick={() => setEnlargedImage(null)} 
+          style={{
+            position: 'fixed',
+            top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+            zIndex: 9999,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            cursor: 'zoom-out'
+          }}
+        >
+          <img 
+            src={enlargedImage} 
+            alt="확대된 사진" 
+            style={{ maxWidth: '90%', maxHeight: '90%', borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }} 
+          />
+        </div>
+      )}
     </div>
   );
 }
