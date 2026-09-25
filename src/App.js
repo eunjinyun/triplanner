@@ -2,16 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
 
 function App() {
-  // 로그인 상태 관리 ('', 'login', 'signup')
   const [authMode, setAuthMode] = useState(''); 
-  const [currentUser, setCurrentUser] = useState(null); // 로그인한 유저 정보 (phone, name 등)
+  const [currentUser, setCurrentUser] = useState(null); 
   
-  // 로그인/회원가입 입력 폼 상태
   const [phoneInput, setPhoneInput] = useState('');
   const [pwInput, setPwInput] = useState('');
   const [nameInput, setNameInput] = useState('');
 
-  // 기존 서비스 데이터 상태
   const [competitions, setCompetitions] = useState([]);
   const [participations, setParticipations] = useState({});
   const [newComp, setNewComp] = useState({ title: '', date: '', location: '', course: '', category: '철인3종' });
@@ -19,7 +16,6 @@ function App() {
   const [editingComp, setEditingComp] = useState(null); 
   const [enlargedImage, setEnlargedImage] = useState(null);
 
-  // 브라우저에 로그인 정보가 남아있는지 확인
   useEffect(() => {
     const savedUser = localStorage.getItem('tri_user');
     if (savedUser) {
@@ -27,42 +23,38 @@ function App() {
     }
   }, []);
 
-  // 로그인 상태가 바뀌거나 데이터가 바뀔 때 대회 및 참가 기록 불러오기
   useEffect(() => {
-    if (currentUser) {
-      fetchData();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!currentUser) return;
+
+    const fetchData = async () => {
+      // 대회 목록 불러오기 (전체 혹은 내가 등록한 것만 보려면 .eq('user_id', currentUser.phone) 추가 가능)
+      const { data: comps } = await supabase.from('competitions').select('*').order('date', { ascending: false });
+      setCompetitions(comps || []);
+
+      // 로그인한 유저의 참가/기록 데이터만 정확히 가져오기
+      const { data: parts } = await supabase.from('participations').select('*').eq('user_id', currentUser.phone);
+      const partsMap = {};
+      parts?.forEach(p => partsMap[p.comp_id] = p);
+      setParticipations(partsMap);
+    };
+
+    fetchData();
   }, [currentUser]);
 
-  const fetchData = async () => {
-    const { data: comps } = await supabase.from('competitions').select('*').order('date', { ascending: false });
-    setCompetitions(comps || []);
-
-    // 로그인한 유저의 참가 기록만 가져옴 (user_id를 전화번호로 사용)
-    const { data: parts } = await supabase.from('participations').select('*').eq('user_id', currentUser.phone);
-    const partsMap = {};
-    parts?.forEach(p => partsMap[p.comp_id] = p);
-    setParticipations(partsMap);
-  };
-
-  // 회원가입 처리
   const handleSignUp = async (e) => {
     e.preventDefault();
     if (!phoneInput || !pwInput || !nameInput) {
       return alert('모든 항목을 입력해주세요.');
     }
 
-    // 1. 이미 가입된 번호가 있는지 확인
     const { data: existing } = await supabase.from('users').select('*').eq('phone', phoneInput);
     if (existing && existing.length > 0) {
       return alert('이미 가입된 전화번호입니다. 로그인해 주세요.');
     }
 
-    // 2. 유저 정보 저장
     const { error } = await supabase.from('users').insert([{ phone: phoneInput, password: pwInput, name: nameInput }]);
     if (error) {
-      alert('회원가입 실패! (Supabase에 users 테이블이 있는지 확인하세요)');
+      alert('회원가입 실패!');
     } else {
       alert('회원가입이 완료되었습니다! 로그인해 주세요.');
       setAuthMode('login');
@@ -70,7 +62,6 @@ function App() {
     }
   };
 
-  // 로그인 처리
   const handleLogin = async (e) => {
     e.preventDefault();
     const { data, error } = await supabase.from('users').select('*').eq('phone', phoneInput).eq('password', pwInput);
@@ -80,7 +71,7 @@ function App() {
     } else {
       const userData = data[0];
       setCurrentUser(userData);
-      localStorage.setItem('tri_user', JSON.stringify(userData)); // 브라우저에 기억
+      localStorage.setItem('tri_user', JSON.stringify(userData));
       setAuthMode('');
       setPhoneInput('');
       setPwInput('');
@@ -88,7 +79,6 @@ function App() {
     }
   };
 
-  // 로그아웃
   const handleLogout = () => {
     localStorage.removeItem('tri_user');
     setCurrentUser(null);
@@ -98,12 +88,17 @@ function App() {
 
   const handleAddCompetition = async (e) => {
     e.preventDefault();
-    const { error } = await supabase.from('competitions').insert([newComp]);
+    // 대회를 등록할 때 현재 로그인한 유저의 phone을 user_id로 함께 저장
+    const { error } = await supabase.from('competitions').insert([{
+      ...newComp,
+      user_id: currentUser.phone
+    }]);
+
     if (error) alert('등록 실패!');
     else {
       alert('대회가 등록되었습니다.');
       setNewComp({ title: '', date: '', location: '', course: '', category: '철인3종' });
-      fetchData(); 
+      window.location.reload(); 
     }
   };
 
@@ -115,7 +110,7 @@ function App() {
     if (error) alert('삭제 중 오류가 발생했습니다.');
     else {
       alert('대회가 삭제되었습니다.');
-      fetchData();
+      window.location.reload();
     }
   };
 
@@ -133,7 +128,7 @@ function App() {
     else {
       alert('대회 정보가 수정되었습니다.');
       setEditingComp(null); 
-      fetchData();
+      window.location.reload();
     }
   };
 
@@ -143,7 +138,7 @@ function App() {
       comp_id: compId, 
       status 
     }, { onConflict: 'user_id, comp_id' });
-    fetchData();
+    window.location.reload();
   };
 
   const handleFileUpload = async (e, compId) => {
@@ -171,7 +166,7 @@ function App() {
     }, { onConflict: 'user_id, comp_id' });
 
     alert('사진과 소감이 등록되었습니다!');
-    fetchData();
+    window.location.reload();
   };
 
   const availableYears = ['전체', ...new Set(competitions.map(comp => comp.date.substring(0, 4)))].sort((a, b) => b - a);
@@ -179,7 +174,6 @@ function App() {
     ? competitions 
     : competitions.filter(comp => comp.date.startsWith(selectedYear));
 
-  // --- [A] 로그인이 안 되어 있는 경우 (로그인/회원가입 화면) ---
   if (!currentUser) {
     return (
       <div style={{ padding: '30px', maxWidth: '400px', margin: '50px auto', fontFamily: 'sans-serif', border: '1px solid #ddd', borderRadius: '12px', boxShadow: '0 4px 10px rgba(0,0,0,0.05)' }}>
@@ -193,7 +187,6 @@ function App() {
           </div>
         )}
 
-        {/* 로그인 폼 */}
         {authMode === 'login' && (
           <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <h3>로그인</h3>
@@ -204,7 +197,6 @@ function App() {
           </form>
         )}
 
-        {/* 회원가입 폼 */}
         {authMode === 'signup' && (
           <form onSubmit={handleSignUp} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <h3>회원가입</h3>
@@ -219,10 +211,8 @@ function App() {
     );
   }
 
-  // --- [B] 로그인이 완료된 경우 (메인 스케줄러 화면) ---
   return (
     <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', fontFamily: 'sans-serif' }}>
-      {/* 상단 유저 정보 및 로그아웃 바 */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8f9fa', padding: '10px 15px', borderRadius: '8px', marginBottom: '20px' }}>
         <span>👤 <b>{currentUser.name}</b>님 환영합니다!</span>
         <button onClick={handleLogout} style={{ padding: '6px 12px', backgroundColor: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' }}>로그아웃</button>
@@ -355,7 +345,6 @@ function App() {
         );
       })}
 
-      {/* 사진 확대 모달 */}
       {enlargedImage && (
         <div 
           onClick={() => setEnlargedImage(null)} 
@@ -380,6 +369,5 @@ function App() {
     </div>
   );
 }
-
 
 export default App;
