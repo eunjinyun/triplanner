@@ -27,16 +27,9 @@ function App() {
     if (!currentUser) return;
 
     const fetchData = async () => {
-      // 대회 목록 불러오기 (전체 혹은 내가 등록한 것만 보려면 .eq('user_id', currentUser.phone) 추가 가능)
-    // const { data: comps } = await supabase.from('competitions').select('*').order('date', { ascending: false });
-     // setCompetitions(comps || []);
-
-      // 대회 목록 불러오기 (로그인한 유저의 대회만 필터링)
       const { data: comps } = await supabase.from('competitions').select('*').eq('user_id', currentUser.phone).order('date', { ascending: false });
       setCompetitions(comps || []);
 
-
-      // 로그인한 유저의 참가/기록 데이터만 정확히 가져오기
       const { data: parts } = await supabase.from('participations').select('*').eq('user_id', currentUser.phone);
       const partsMap = {};
       parts?.forEach(p => partsMap[p.comp_id] = p);
@@ -48,20 +41,16 @@ function App() {
 
   const handleSignUp = async (e) => {
     e.preventDefault();
-    if (!phoneInput || !pwInput || !nameInput) {
-      return alert('모든 항목을 입력해주세요.');
-    }
+    if (!phoneInput || !pwInput || !nameInput) return;
 
     const { data: existing } = await supabase.from('users').select('*').eq('phone', phoneInput);
     if (existing && existing.length > 0) {
-      return alert('이미 가입된 전화번호입니다. 로그인해 주세요.');
+      setAuthMode('login');
+      return;
     }
 
     const { error } = await supabase.from('users').insert([{ phone: phoneInput, password: pwInput, name: nameInput }]);
-    if (error) {
-      alert('회원가입 실패!');
-    } else {
-      alert('회원가입이 완료되었습니다! 로그인해 주세요.');
+    if (!error) {
       setAuthMode('login');
       setPwInput('');
     }
@@ -71,16 +60,13 @@ function App() {
     e.preventDefault();
     const { data, error } = await supabase.from('users').select('*').eq('phone', phoneInput).eq('password', pwInput);
     
-    if (error || !data || data.length === 0) {
-      alert('전화번호나 비밀번호가 일치하지 않습니다.');
-    } else {
+    if (!error && data && data.length > 0) {
       const userData = data[0];
       setCurrentUser(userData);
       localStorage.setItem('tri_user', JSON.stringify(userData));
       setAuthMode('');
       setPhoneInput('');
       setPwInput('');
-      alert(`${userData.name}님 환영합니다!`);
     }
   };
 
@@ -88,33 +74,27 @@ function App() {
     localStorage.removeItem('tri_user');
     setCurrentUser(null);
     setParticipations({});
-    alert('로그아웃 되었습니다.');
   };
 
   const handleAddCompetition = async (e) => {
     e.preventDefault();
-    // 대회를 등록할 때 현재 로그인한 유저의 phone을 user_id로 함께 저장
     const { error } = await supabase.from('competitions').insert([{
       ...newComp,
       user_id: currentUser.phone
     }]);
 
-    if (error) alert('등록 실패!');
-    else {
-      alert('대회가 등록되었습니다.');
+    if (!error) {
       setNewComp({ title: '', date: '', location: '', course: '', category: '철인3종' });
       window.location.reload(); 
     }
   };
 
   const handleDelete = async (compId) => {
-    if (!window.confirm('정말로 이 대회를 삭제하시겠습니까?\n(등록된 참가 기록과 후기도 모두 삭제됩니다)')) return;
+    if (!window.confirm('정말로 이 대회를 삭제하시겠습니까?')) return;
 
     await supabase.from('participations').delete().eq('comp_id', compId);
     const { error } = await supabase.from('competitions').delete().eq('id', compId);
-    if (error) alert('삭제 중 오류가 발생했습니다.');
-    else {
-      alert('대회가 삭제되었습니다.');
+    if (!error) {
       window.location.reload();
     }
   };
@@ -129,9 +109,7 @@ function App() {
       category: editingComp.category
     }).eq('id', compId);
 
-    if (error) alert('수정 실패!');
-    else {
-      alert('대회 정보가 수정되었습니다.');
+    if (!error) {
       setEditingComp(null); 
       window.location.reload();
     }
@@ -150,12 +128,11 @@ function App() {
     const file = e.target.files[0];
     if (!file) return;
 
-    alert('사진을 업로드 중입니다. 잠시만 기다려주세요...');
     const fileExt = file.name.split('.').pop();
     const fileName = `${currentUser.phone}_${compId}_${Date.now()}.${fileExt}`;
     
     const { error: uploadError } = await supabase.storage.from('photos').upload(fileName, file);
-    if (uploadError) return alert('업로드 실패!');
+    if (uploadError) return;
 
     const { data: publicUrlData } = supabase.storage.from('photos').getPublicUrl(fileName);
     const photoUrl = publicUrlData.publicUrl;
@@ -170,7 +147,6 @@ function App() {
       photo_url: photoUrl
     }, { onConflict: 'user_id, comp_id' });
 
-    alert('사진과 소감이 등록되었습니다!');
     window.location.reload();
   };
 
